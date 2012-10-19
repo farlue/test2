@@ -11,9 +11,14 @@
 #define __MYSS_IMPL__
 
 /************System include***********************************************/
+#include <stdio.h>
 #include <stdlib.h>
 #include <signal.h>
 #include <string.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 /************Private include**********************************************/
 #include "tsh.h"
@@ -38,6 +43,55 @@ static void
 sig(int);
 
 /************External Declaration*****************************************/
+
+/*
+ * runtshrc
+ * arguments: void
+ * returns: void
+ * read and execute commands in ~/.tshrc
+ */
+void
+runtshrc()
+{
+  /* find the .tshrc file */
+  char * home = getenv("HOME");
+  char * tshrcPath = (char *) malloc(PATHBUFSIZE);
+  strcpy(tshrcPath, home);
+  strcat(tshrcPath, "/.tshrc");
+  if (access(tshrcPath, R_OK) == 0) /* check read permission */
+    {
+      int size = BUFSIZE;
+      char * cmd = (char *) malloc(size);
+      /* open the file */
+      FILE * fp = fopen(tshrcPath, "r");
+      char ch;
+      size_t used = 0;
+      while ((ch = getc(fp)) != EOF) /* walk through the file */
+	{
+	  if (used == size)
+	    {
+	      size *= 2;
+	      cmd = realloc(cmd, sizeof(char) * (size + 1));
+	    }
+	  /* handle a command line */
+	  if (ch == '\n')
+	    {
+	      if (cmd[0] != '#') 
+		{
+		  Interpret(cmd);
+		}
+	      used = 0;
+	      continue;
+	    }
+	  cmd[used] = ch;
+	  used ++;
+	  cmd[used] = '\0';
+	}
+      fclose(fp);
+      free(cmd);
+    }
+  free(tshrcPath);
+}
 
 /**************Implementation***********************************************/
 
@@ -64,8 +118,16 @@ main(int argc, char *argv[])
   if (signal(SIGTSTP, sig) == SIG_ERR)
     PrintPError("SIGTSTP");
 
+  if (strcmp(getenv("SHELL"), "./tsh") == 0 || strcmp(getenv("SHELL"), "../tsh") == 0)
+    {
+      runtshrc();
+    }
+
   while (!forceExit) /* repeat forever */
     {
+      /* print prompt */
+      PrintPrompt();
+      
       /* read command line */
       getCommandLine(&cmdLine, BUFSIZE);
 
@@ -74,14 +136,17 @@ main(int argc, char *argv[])
 
       /* interpret command and line
        * includes executing of commands */
-      Interpret(cmdLine);
-
-      if (strcmp(cmdLine, "exit") == 0)
-        forceExit = TRUE;
+      if (forceExit != TRUE) 
+	{
+	  Interpret(cmdLine);
+	}
     }
 
   /* shell termination */
   free(cmdLine);
+  fflush(stdin);
+  fflush(stdout);
+
   return 0;
 } /* main */
 
@@ -95,7 +160,30 @@ main(int argc, char *argv[])
  *
  * This should handle signals sent to tsh.
  */
+extern bool IsReading();
+
+extern pid_t fgjob;
+
 static void
 sig(int signo)
 {
+  if (signo == SIGINT) 
+    {
+      /* only handle SIGINT for now */
+      if (fgjob == 0) 
+	{
+	  /* if there is no fore ground job, exit (same as tsh-ref) */
+	  exit(0);
+	}
+      else 
+	{
+	  /* kill the fore ground job */
+	  if (getpid() != fgjob) 
+	    {
+	      /* kill the fore ground job from the shell process */
+	      kill(fgjob, SIGINT);
+	      fgjob = 0;
+	    }
+	}
+    }
 } /* sig */

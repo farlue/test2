@@ -177,4 +177,8 @@ getCommandLine(char** buf, int size)
       cmd[used] = '\0';
     }
   isReading = FALSE;
+  if (ch == EOF) 
+    {
+      forceExit = TRUE;
+    }
 } /* getCommandLine */

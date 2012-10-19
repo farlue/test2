@@ -46,6 +46,7 @@
 #include <assert.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <unistd.h>
 #include "string.h"
 
 /************Private include**********************************************/
@@ -76,8 +77,9 @@ getCommand(char* cmdLine);
 void
 freeCommand(commandT* cmd);
 
+void
+updateEnv(commandT* cmd);
 /**************Implementation***********************************************/
-
 
 /*
  * Interpret
@@ -93,15 +95,19 @@ freeCommand(commandT* cmd);
 void
 Interpret(char* cmdLine)
 {
-  int i = 0;
   commandT* cmd = getCommand(cmdLine);
+  updateEnv(cmd);
 
+#ifdef DEBUG_OUTPUT
   printf("argc: %d\n", cmd->argc);
+  int i = 0;
   for (i = 0; cmd->argv[i] != 0; i++)
     {
       printf("#%d|%s|\n", i, cmd->argv[i]);
     }
-  
+#endif //DEBUG_OUTPUT
+
+  RunCmd(cmd);
   freeCommand(cmd);
 } /* Interpret */
 
@@ -274,3 +280,31 @@ freeCommand(commandT* cmd)
     }
   free(cmd);
 } /* freeCommand */
+
+/*
+ * updateEnv
+ *
+ * arguments:
+ *   commandT *cmd: pointer to the commandT struct to be freed
+ *
+ * returns: none
+ *
+ * This function update environment variables in the arguements
+ */
+void
+updateEnv(commandT* cmd)
+{
+  int i;
+
+  for (i = 0; cmd->argv[i] != 0; i++)
+    {
+      if (cmd->argv[i][0] == '$')
+	{
+	  char * var = cmd->argv[i] + 1;
+	  char * value = getenv(var);
+	  int tmpLen = strlen(value);
+	  cmd->argv[i] = realloc(cmd->argv[i], tmpLen + 1);
+	  strcpy(cmd->argv[i], value);
+	}
+    }
+} /* updateEnv */

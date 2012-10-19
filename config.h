@@ -47,6 +47,11 @@
 
 #define MAXLINE 120
 
+#define PATHBUFSIZE 512
+
+#undef DEBUG_OUTPUT
+
+
 /************Global Variables*********************************************/
 
 /************Function Prototypes******************************************/

@@ -54,6 +54,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <signal.h>
+#include <time.h>
 
 /************Private include**********************************************/
 #include "runtime.h"
@@ -78,6 +79,8 @@ typedef struct bgjob_l
 
 /* the pids of the background processes */
 bgjobL *bgjobs = NULL;
+/* the pid of fore ground process, if the shell is in fore ground */ 
+pid_t fgjob = 0;
 
 /************Function Prototypes******************************************/
 /* run command */
@@ -98,6 +101,9 @@ RunBuiltInCmd(commandT*);
 /* checks whether a command is a builtin command */
 static bool
 IsBuiltIn(char*);
+/* find the full path of a command */
+char * 
+findCommand(commandT* cmd);
 /************External Declaration*****************************************/
 
 /**************Implementation***********************************************/
@@ -237,6 +243,79 @@ RunExternalCmd(commandT* cmd, bool fork)
 
 
 /*
+ * findCommand
+ * arguments:
+ *   commandT * cmd: the command
+ * returns: 
+ *   full path to the command   - if found
+ *   NULL                       - otherwise
+ * This function only finds standalone commands
+ * Built in commands should be tested separately
+ */ 
+
+char * 
+findCommand(commandT* cmd)
+{
+  char * fullPath = NULL;
+
+  if (cmd->name[0] == '.')  
+    {
+      /* command start with . are searched within local folder  */
+      fullPath = getcwd(NULL, PATHBUFSIZE);
+      strcat(fullPath, "/");
+      strcat(fullPath, cmd->name);
+      if (access(fullPath, X_OK) != 0) 
+	{
+	  free(fullPath);
+	  fullPath = NULL;
+	}
+    }
+  else if (cmd->name[0] == '/') 
+    {
+      /* command start with / are searched from root path  */
+      fullPath = (char *) malloc(PATHBUFSIZE);
+      strcpy(fullPath, cmd->name);
+      if(access(fullPath, X_OK) != 0)
+	{
+	  free(fullPath);
+	  fullPath = NULL;
+	}
+    }
+  else
+    {
+      /* other commands are searched in PATH*/
+      bool found = FALSE;
+      char * path = malloc(PATHBUFSIZE);
+      strcpy(path, getenv("PATH"));
+      char * pathItem = strtok(path, ":");
+
+      fullPath = malloc(PATHBUFSIZE);
+
+      while (pathItem != NULL) 
+	{
+	  strcpy(fullPath, pathItem);
+	  strcat(fullPath, "/");
+	  strcat(fullPath, cmd->name);
+	  if(access(fullPath, X_OK) == 0)
+	    {
+	      found = TRUE;
+	      break;
+	    }
+	  pathItem = strtok(NULL, ":");
+	}
+      
+      if (found == FALSE) 
+	{
+	  free(fullPath);
+	  fullPath = NULL;
+	}
+      free(path);
+    }
+  return fullPath;
+} /* findCommand */
+
+
+/*
  * ResolveExternalCmd
  *
  * arguments:
@@ -249,7 +328,23 @@ RunExternalCmd(commandT* cmd, bool fork)
 static bool
 ResolveExternalCmd(commandT* cmd)
 {
-  return FALSE;
+  char * fullPath;
+  if ((fullPath = findCommand(cmd)) == NULL) 
+    {
+#ifdef DEBUG_OUTPUT
+      printf("%s does not exist\n", cmd->name);
+#endif
+      printf("%s: %s: No such file or directory\n", "./tsh-ref: line 1", cmd->name);
+      return FALSE;
+    } 
+  else
+    {
+#ifdef DEBUG_OUTPUT
+      printf("%s exists\n", fullPath);
+#endif
+      free(fullPath);
+      return TRUE;
+    }
 } /* ResolveExternalCmd */
 
 
@@ -267,6 +362,26 @@ ResolveExternalCmd(commandT* cmd)
 static void
 Exec(commandT* cmd, bool forceFork)
 {
+  if (forceFork) 
+    {
+      pid_t child_id = fork();
+      if (child_id != 0) 
+	{
+	  /* parent should wait */
+	  fgjob = child_id;
+	  waitpid(child_id, NULL, 0);
+	  fgjob = 0;
+	}
+      else 
+	{
+	  char * fullPath = findCommand(cmd);
+	  execv(fullPath, cmd->argv);
+	  free(fullPath);
+	}
+    }
+  else
+    {
+    }
 } /* Exec */
 
 
@@ -285,7 +400,17 @@ Exec(commandT* cmd, bool forceFork)
 static bool
 IsBuiltIn(char* cmd)
 {
-  return FALSE;
+  if (strcmp(cmd, "cd") == 0 ||  
+      strcmp(cmd, "exit") == 0 ||
+      strchr(cmd, '=') != NULL    /* set env */
+      )
+    {
+      return TRUE;
+    }
+  else
+    {
+      return FALSE;
+    }
 } /* IsBuiltIn */
 
 
@@ -302,6 +427,58 @@ IsBuiltIn(char* cmd)
 static void
 RunBuiltInCmd(commandT* cmd)
 {
+  if (strcmp(cmd->name, "cd") == 0) 
+    {
+      char * newPath;
+      if (cmd->argc == 1)
+        {
+          newPath=(char *)malloc(PATHBUFSIZE);
+          strcpy(newPath, getenv("HOME"));
+        }
+      else if (cmd->argc == 2) //cd takes exactly one argument
+	{
+          if (cmd->argv[1][0] == '/')
+            {
+              /* cd to absolute path */
+              newPath = (char *)malloc(PATHBUFSIZE);
+              strcpy(newPath, cmd->argv[1]);
+            }
+          else
+            {
+              /* cd to relative path */
+              newPath = getcwd(NULL, PATHBUFSIZE);
+              strcat(newPath, "/");
+              strcat(newPath, cmd->argv[1]);
+            }
+       }
+     else
+        {
+          return;
+        }
+      chdir(newPath);
+      free(newPath);
+    }
+  else if (strcmp(cmd->name, "exit") == 0) 
+    {
+      if (strcmp(getenv("SHELL"), "./tsh") == 0 || strcmp(getenv("SHELL"), "../tsh") == 0)
+	{
+          /* print exit before quit */
+	  printf("exit\n");
+          fflush(stdout);
+	}
+      forceExit = TRUE;
+    }
+  else if (strchr(cmd->name, '=') != NULL)
+    {
+      char * var = (char *) malloc (PATHBUFSIZE);
+      strcpy(var, cmd->name);
+      char * value = strchr(var, '=');
+      *value = '\0';
+      value ++;
+      setenv(var, value, 1);
+      free(var);
+      fflush(stdout);
+    }
 } /* RunBuiltInCmd */
 
 
@@ -318,3 +495,67 @@ void
 CheckJobs()
 {
 } /* CheckJobs */
+
+/*
+ * GetPrompt
+ *
+ * arguments: none
+ *
+ * returns: none
+ */
+void
+PrintPrompt()
+{
+  char * prompt = getenv("PS1");
+
+  char * promptout = (char *) malloc(PATHBUFSIZE);
+  strcpy(promptout, "");
+
+  if (prompt != NULL)
+    {
+      while (*prompt != '\0') 
+	{
+	  if (*prompt != '\\') 
+	    {					
+	      /* copy regular charactors */
+	      char tmp[2] = {*prompt, '\0'};
+	      strcat(promptout, tmp);
+	    }
+	  else 
+	    {
+	      ++ prompt;
+	      if (*prompt == 'u')
+		/* get user name */
+		strcat(promptout, getlogin());
+	      else if (*prompt == 'h') 
+		{
+		  /* get hostname */
+		  char buf[PATHBUFSIZE];
+		  gethostname(buf, PATHBUFSIZE);
+		  strcat(promptout, strtok(buf, "."));
+		}
+	      else if (*prompt == 'w') 
+		{
+		  /* get cwd */
+		  char buf[PATHBUFSIZE];
+		  getcwd(buf, PATHBUFSIZE);
+		  strcat(promptout, buf);
+		}
+	      else if (*prompt == 't') 
+		{
+		  /* get current time */
+		  time_t t = time(NULL);
+		  struct tm * tmp = localtime(&t);
+		  char buf[PATHBUFSIZE];
+		  strftime(buf, PATHBUFSIZE, "%H:%M:%S", tmp);
+		  strcat(promptout, buf);
+		}
+	    }
+	  ++ prompt;
+	}
+    }
+  printf("%s", promptout);  
+  free(promptout);
+  fflush(stdout); /* make sure the prompt is printed */
+  return;
+}
