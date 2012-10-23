@@ -63,6 +63,49 @@
 EXTERN void
 Interpret(char*);
 
+/***********************************************************************
+ *  Title: Create a new alias
+ * ---------------------------------------------------------------------
+ *    Purpose: Put a new alias entry into the alias map
+ *    programs
+ *    Input: an alias assignment string
+ *    Output: void
+ ***********************************************************************/
+EXTERN void
+createAlias(char* aliasCmd);
+
+/***********************************************************************
+ *  Title: Remove an alias
+ * ---------------------------------------------------------------------
+ *    Purpose: Remove the give alias entry from the alias map
+ *    programs
+ *    Input: an alias name
+ *    Output: boolean
+ ***********************************************************************/
+EXTERN bool
+removeAlias(char* aliasCmd);
+
+/***********************************************************************
+ *  Title: Print all aliases
+ * ---------------------------------------------------------------------
+ *    Purpose: Print all the alias records in the alias map
+ *    programs
+ *    Input: none
+ *    Output: void
+ ***********************************************************************/
+EXTERN void
+printAlias();
+
+/***********************************************************************
+ *  Title: Free the alias map
+ * ---------------------------------------------------------------------
+ *    Purpose: Free all the memory allocated for the alias map
+ *    programs
+ *    Input: none
+ *    Output: void
+ ***********************************************************************/
+EXTERN void
+freeAliasMap();
 /************External Declaration*****************************************/
 
 /**************Definition***************************************************/

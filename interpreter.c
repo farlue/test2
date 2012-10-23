@@ -69,10 +69,33 @@ typedef struct string_l
 int BUFSIZE = 512;
 int MAXARGS = 100;
 
+struct alias_entry
+{
+  char* name;
+  char* text;
+  struct alias_entry* prev;
+  struct alias_entry* next;
+};
+typedef struct alias_entry Alias;
+Alias* aliasMap;
+bool aliasExpanded = FALSE;
+
 /**************Function Prototypes******************************************/
 
 commandT*
 getCommand(char* cmdLine);
+
+void
+resolveHome(commandT* cmd);
+
+void
+expandCmdWithAlias(commandT* cmd, int n);
+
+char*
+getAlias(char* cmdName);
+
+Alias*
+findAlias(char* name);
 
 void
 freeCommand(commandT* cmd);
@@ -250,11 +273,318 @@ getCommand(char* cmdLine)
 
   free(tmp);
 
+  expandCmdWithAlias(cmd, 0);
+
+  resolveHome(cmd);
+
   cmd->name = cmd->argv[0];
 
   return cmd;
 } /* getCommand */
 
+/*
+ * resolveHome
+ *
+ * arguments:
+ *   commandT* cmd: the pointer to the command
+ *
+ * returns: none
+ *
+ * This function finds the string "~/" in the command, and
+ * replace it with the absolute home directory.
+ */
+void
+resolveHome(commandT* cmd)
+{
+  int i;
+  for (i = 0; i < cmd->argc; i++)
+    {
+      if (strcmp(cmd->argv[i], "~/") == 0)
+        {
+          char * newPath=(char *)malloc(PATHBUFSIZE);
+          strcpy(newPath, getenv("HOME"));
+          free(cmd->argv[i]);
+          cmd->argv[i] = newPath;
+        }
+    }
+}
+
+/*
+ * expandCmdWithAlias
+ *
+ * arguments:
+ *   commandT* cmd: the pointer to the command that needs to be
+ *   expanded
+ *
+ * returns: none
+ *
+ * This function expands any alias in the given command to the
+ * full text of that alias. The command is directly modified
+ * via its pointer, so nothing needs to be returned.
+ */
+void
+expandCmdWithAlias(commandT* cmd, int n)
+{
+  /* get the alias text from the alias map */
+  char* expandAlias = getAlias(cmd->argv[n]);
+  if (strcmp(expandAlias, cmd->argv[n]) != 0 && aliasExpanded == FALSE)
+    {
+      /* get the command type of the alias text */
+      commandT* cmdAlias = getCommand(expandAlias);
+      cmd->argv[n] = cmdAlias->argv[0];
+      int i;
+      /* move all the original arguments to make room for new arguments */
+      for (i = cmd->argc - 1; i > n; i--)
+        {
+          cmd->argv[i + cmdAlias->argc - 1] = cmd->argv[i];
+        }
+      /* put the new arguments */
+      for (i = n + 1; i < n + cmdAlias->argc; i++)
+        {
+          cmd->argv[i] = cmdAlias->argv[i - n];
+        }
+      /* increase the argument count */
+      cmd->argc += cmdAlias->argc - 1;
+      /* expand the next alias if the current alias text ends with space or tab */
+      if (*(strchr(expandAlias, '\0') - 1) == ' ' ||
+          *(strchr(expandAlias, '\0') - 1) == '\t')
+        {
+          expandCmdWithAlias(cmd, cmdAlias->argc);
+        }
+      /* mark the alias as expanded to avoid recursive expansion */
+      aliasExpanded = TRUE;
+    }
+}
+
+/* getAlias
+ *
+ * arguments:
+ *   char* cmdName: pointer to the command name string
+ *
+ * returns:
+ *   char*: pointer to the text string of the alias
+ *
+ * This function checks if a command name has an alias, and if
+ * it does, returns the expanded text of the alias.
+ */
+char*
+getAlias(char* cmdName)
+{
+  if (aliasMap == NULL)
+    {
+      return cmdName;
+    }
+  /* find the alias or the smaller closest alias in the map*/
+  Alias * prevAlias = findAlias(cmdName);
+  /* return the alias text of the alias if found */
+  if (strcmp(prevAlias->name, cmdName) == 0)
+    {
+      return prevAlias->text;
+    }
+  /* return the original text if alias not found */
+  else
+    {
+      return cmdName;
+    }
+}
+
+/*
+ * findAlias
+ *
+ * arguments:
+ *   char* name: the pointer to the name of the alias that
+ *   needs to be found
+ *
+ * returns:
+ *   Alias*: the pointer to an alias entry
+ *
+ * This function looks for the given alias in the alias map.
+ * If the alias is found, it returns a pointer to the alias.
+ * If not found, it returns a pointer to the alias in the map
+ * whose name is smaller than and closest to the given alias.
+ */
+Alias*
+findAlias(char* name)
+{
+  Alias * head = aliasMap;
+  Alias * it;
+  /* iterate through the map */
+  for (it = head; it->next != NULL; it = it->next)
+    {
+      /* if alias name found, return the alias */
+      if (strcmp(it->name, name) == 0)
+        {
+          return it;
+        }
+      /* if alias not found, return the smaller and closest alias */
+      else if (strcmp(it->name, name) < 0)
+        {
+          if (strcmp((it->next)->name, name) > 0)
+            {
+              return it->next;
+            }
+        }
+    }
+  /* if there is only one entry in the map, return this entry */
+  return it;
+}
+
+/*
+ * createAlias
+ *
+ * arguments:
+ *   char* aliasCmd: the assignment of alias, which includes a
+ *   '=' character
+ *
+ * returns: none
+ *
+ * This function takes in the alias assignment, and creates a 
+ * record of the alias.
+ */  
+void
+createAlias(char* aliasCmd)
+{
+  /* if the context is not correct, return */
+  if (strchr(aliasCmd, '=') == NULL)
+    {
+      return;
+    }
+  /* get the name and text of the alias */
+  char * name = (char *) malloc(BUFSIZE);
+  strcpy(name, aliasCmd);
+  char * text = strchr(name, '=');
+  *text = '\0';
+  text++;
+  Alias * newAlias = (Alias *) malloc(sizeof(Alias)); 
+  /* create a new alias */
+  newAlias->name = name;
+  newAlias->text = text;
+  /* put the alias into an empty map*/
+  if (aliasMap == NULL)
+    {
+      newAlias->next = NULL;
+      newAlias->prev = NULL;
+      aliasMap = newAlias;
+    }
+  else /* put the alias into a non-empty map */
+    {
+      Alias * prevAlias = findAlias(newAlias->name);
+      /* if an alias with the same name is found, replace the text */
+      if (strcmp(prevAlias->name, newAlias->name) == 0)
+        {
+          prevAlias->text = newAlias->text;
+        }
+      else if (strcmp(prevAlias->name, newAlias->name) < 0)
+        {
+          /* if a smaller closest entry is found, put the new alias next to it */
+          newAlias->next = prevAlias->next;
+          newAlias->prev = prevAlias;
+          prevAlias->next = newAlias;
+        }
+      else
+        {
+          /* if a larger closest entry is found, put the new alias ahead of it */
+          if (prevAlias == aliasMap)
+            {
+              /* update the map pointer */
+              aliasMap = newAlias;
+            }
+          newAlias->next = prevAlias;
+          newAlias->prev = prevAlias->prev;
+          prevAlias->prev = newAlias;
+        }
+    }
+}
+
+/*
+ * removeAlias
+ *
+ * arguments:
+ *   char* name: the name of the alias that needs to be removed
+ *
+ * returns: TRUE if found and removed, FALSE if not found
+ *
+ * This function finds the given alias name in the alias map,
+ * and remove the entry if it is found.
+ */
+bool
+removeAlias(char* name)
+{
+  if (aliasMap == NULL)
+    {
+      return FALSE;
+    }
+  else
+    {
+      Alias * prevAlias = findAlias(name);
+      /* remove the entry only if the exact alias name is found */
+      if (strcmp(prevAlias->name, name) == 0)
+        {
+          if (prevAlias->prev != NULL)
+            {
+              (prevAlias->prev)->next = prevAlias->next;
+            }
+          if (prevAlias->next != NULL)
+            {
+              (prevAlias->next)->prev = prevAlias->prev;
+            }
+          if (prevAlias == aliasMap)
+            {
+              aliasMap = prevAlias->next;
+            }
+          free(prevAlias);
+          return TRUE;
+        }
+      else
+        {
+          return FALSE;
+        }
+    }
+}
+
+/*
+ * printAlias
+ *
+ * arguments: none
+ *
+ * returns: none
+ *
+ * This function prints all the alias records.
+ */
+void
+printAlias()
+{
+  Alias * it;
+  /* iterate through the map and print every entry */
+  for (it = aliasMap; it != NULL; it = it->next)
+    {
+      printf("alias %s=\'%s\'\n", it->name, it->text);
+    }
+    fflush(stdout);
+}
+
+/*
+ * freeAliasMap
+ *
+ * arguments: none
+ *
+ * returns: none
+ *
+ * This function frees all the memory associated with the alias
+ * map.
+ */
+void
+freeAliasMap()
+{
+  Alias * it;
+  Alias * head = aliasMap;
+  /* iterate through the map and free every entry */
+  for (it = aliasMap; it != NULL; it = head)
+    {
+      head = it->next;
+      free(it);
+    }
+}
 
 /*
  * freeCommand

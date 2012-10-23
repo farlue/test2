@@ -144,6 +144,7 @@ main(int argc, char *argv[])
 
   /* shell termination */
   free(cmdLine);
+  freeAliasMap();
   fflush(stdin);
   fflush(stdout);
 
