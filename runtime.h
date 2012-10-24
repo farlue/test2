@@ -34,6 +34,7 @@
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
+#include "interpreter.h"
 #endif
 
 /************System include***********************************************/
@@ -56,12 +57,37 @@
 #define VAREXTERN(x, y) extern x;
 #endif
 
+typedef enum procState 
+{
+	RUNNING, 
+	TERMINATED, 
+	STOPPED
+} state_t;
+
+typedef enum fgStatus
+{
+	BUSY,
+	AVAIL,
+	KILLED,
+	SUSPENDED
+} status_t;
+
 typedef struct command_t
 {
   char* name;
   int argc;
   char* argv[];
 } commandT;
+
+typedef struct bgjob_l
+{
+	pid_t pid;
+	state_t state;
+	int num;
+	char* cmd;
+	struct bgjob_l* prev;
+	struct bgjob_l* next;
+} bgjobL;
 
 /************Global Variables*********************************************/
 
@@ -194,6 +220,23 @@ CheckJobs();
 EXTERN void
 PrintPrompt();
 
+EXTERN void
+transitProcState(bgjobL*, state_t);
+
+EXTERN bgjobL*
+searchJobByID(pid_t);
+
+EXTERN bgjobL*
+searchJobByNum(int);
+
+EXTERN bgjobL*
+searchJobByState(state_t);
+
+EXTERN void
+addJob(char*, pid_t, state_t);
+
+EXTERN void
+removeJob(bgjobL*);
 /************External Declaration*****************************************/
 
 /**************Definition***************************************************/

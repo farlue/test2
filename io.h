@@ -55,6 +55,9 @@
 #endif
 
 /************Global Variables*********************************************/
+/* Track the current number of command lines
+ */
+EXTERN int lineNum;
 
 /************Function Prototypes******************************************/
 

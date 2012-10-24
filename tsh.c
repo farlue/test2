@@ -17,6 +17,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 
@@ -43,6 +44,10 @@ static void
 sig(int);
 
 /************External Declaration*****************************************/
+
+extern pid_t fgjob;
+extern status_t fgStatus;
+extern char* fgCmd;
 
 /*
  * runtshrc
@@ -111,12 +116,15 @@ main(int argc, char *argv[])
 {
   /* Initialize command buffer */
   char* cmdLine = malloc(sizeof(char*) * BUFSIZE);
+	fgCmd = malloc(sizeof(char) * BUFSIZE);
 
   /* shell initialization */
   if (signal(SIGINT, sig) == SIG_ERR)
     PrintPError("SIGINT");
   if (signal(SIGTSTP, sig) == SIG_ERR)
     PrintPError("SIGTSTP");
+	if (signal(SIGCHLD, sig) == SIG_ERR)
+		PrintPError("SIGCHLD");
 
   if (strcmp(getenv("SHELL"), "./tsh") == 0 || strcmp(getenv("SHELL"), "../tsh") == 0)
     {
@@ -144,6 +152,8 @@ main(int argc, char *argv[])
 
   /* shell termination */
   free(cmdLine);
+	free(fgCmd);
+  freeAliasMap();
   fflush(stdin);
   fflush(stdout);
 
@@ -162,28 +172,94 @@ main(int argc, char *argv[])
  */
 extern bool IsReading();
 
-extern pid_t fgjob;
-
 static void
 sig(int signo)
 {
+	int status;
+	pid_t chldPID;
+
+	switch (signo)
+	{
+		case SIGINT:
+			if (fgjob == 0)
+				exit(0);
+			else
+			{
+				fgStatus = KILLED;
+				kill(-fgjob, SIGINT);
+			}
+			break;
+		case SIGTSTP:
+			if (fgjob != 0)
+			{
+				fgStatus = SUSPENDED;
+				kill(-fgjob, SIGTSTP);
+			}
+			break;
+		case SIGCHLD:
+			chldPID = waitpid(-1, &status, WUNTRACED | WNOHANG);
+
+			if (chldPID == fgjob) // process from foreground
+			{
+				switch (fgStatus)
+				{
+					case KILLED:
+						addJob(fgCmd, chldPID, TERMINATED);
+						break;
+					case SUSPENDED:
+						addJob(fgCmd, chldPID, STOPPED);
+						break;
+					case BUSY:
+						break;
+					case AVAIL:
+						break;
+					default:
+						exit(0);
+				}
+				fgjob = 0;
+				fgStatus = AVAIL;
+			}
+			else // process from background 
+			{
+				bgjobL* job = searchJobByID(chldPID);
+				switch (job->state)
+				{
+					case RUNNING:
+						transitProcState(job, TERMINATED);
+//						printf("[%d]\tDone\t\t\t%s\n", job->num, job->cmd);
+//						fflush(stdout);
+						break;
+					case STOPPED:
+						transitProcState(job, RUNNING);
+						break;
+					default:
+						exit(0);
+				}
+			}
+			break;
+		default:
+			printf("ERROR: Unexpected Signal!\n");
+			exit(0);
+	}
+} /* sig */
+/*
   if (signo == SIGINT) 
     {
-      /* only handle SIGINT for now */
+//       only handle SIGINT for now 
       if (fgjob == 0) 
 	{
-	  /* if there is no fore ground job, exit (same as tsh-ref) */
+//	   if there is no fore ground job, exit (same as tsh-ref) 
 	  exit(0);
 	}
       else 
 	{
-	  /* kill the fore ground job */
+//	   kill the fore ground job 
 	  if (getpid() != fgjob) 
 	    {
-	      /* kill the fore ground job from the shell process */
+//	       kill the fore ground job from the shell process 
 	      kill(fgjob, SIGINT);
 	      fgjob = 0;
 	    }
 	}
     }
-} /* sig */
+*/
