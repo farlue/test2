@@ -339,7 +339,7 @@ ResolveExternalCmd(commandT* cmd)
 #ifdef DEBUG_OUTPUT
       printf("%s does not exist\n", cmd->name);
 #endif
-      printf("%s: %s: No such file or directory\n", "./tsh-ref: line 1", cmd->name);
+      printf("%s: line %d: %s: command not found\n", "/bin/bash", lineNum + 2, cmd->name);
       return FALSE;
     } 
   else
@@ -441,7 +441,9 @@ IsBuiltIn(char* cmd)
       strcmp(cmd, "bg") == 0 ||
       strcmp(cmd, "fg") == 0 ||
       strcmp(cmd, "jobs") == 0 ||
-      strchr(cmd, '=') != NULL   /* set env */
+      strchr(cmd, '=') != NULL ||   /* set env */
+      strcmp(cmd, "alias") == 0 ||
+      strcmp(cmd, "unalias") == 0
       )
     {
       return TRUE;
@@ -483,6 +485,11 @@ RunBuiltInCmd(commandT* cmd)
               /* cd to absolute path */
               newPath = (char *)malloc(PATHBUFSIZE);
               strcpy(newPath, cmd->argv[1]);
+            }
+          else if (strcmp(cmd->argv[1], "~/") == 0)
+            {
+              newPath=(char *)malloc(PATHBUFSIZE);
+              strcpy(newPath, getenv("HOME"));
             }
           else
             {
@@ -592,6 +599,27 @@ RunBuiltInCmd(commandT* cmd)
 
 		}
 	}
+  else if (strcmp(cmd->name, "alias") == 0)
+    {
+      /* print the alias map or create a new alias */
+      if (cmd->argc == 1)
+        {
+          printAlias();
+        }
+      else if (cmd->argc == 2)
+        {
+          createAlias(cmd->argv[1]);
+        }
+    }
+  else if (strcmp(cmd->name, "unalias") == 0 && cmd->argc == 2)
+    {
+      /* remove an alias entry from the alias map */
+      if (!removeAlias(cmd->argv[1]))
+        {
+          printf("%s: line %d: %s: %s: not found\n", "/bin/bash",
+            lineNum + 2, "unalias", cmd->argv[1]);
+        }
+    }
 } /* RunBuiltInCmd */
 
 

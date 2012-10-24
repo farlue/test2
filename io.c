@@ -61,6 +61,9 @@
 /* indicates that the standard input stream is currently read  */
 bool isReading = FALSE;
 
+/* tracks the number of command lines */
+int lineNum = 0;
+
 /************Function Prototypes******************************************/
 
 /************External Declaration*****************************************/
@@ -176,6 +179,7 @@ getCommandLine(char** buf, int size)
       used++;
       cmd[used] = '\0';
     }
+  lineNum ++;
   isReading = FALSE;
   if (ch == EOF) 
     {

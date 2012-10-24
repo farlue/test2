@@ -153,6 +153,7 @@ main(int argc, char *argv[])
   /* shell termination */
   free(cmdLine);
 	free(fgCmd);
+  freeAliasMap();
   fflush(stdin);
   fflush(stdout);
 
