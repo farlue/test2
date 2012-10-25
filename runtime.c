@@ -450,7 +450,7 @@ pipeCommand(commandT* cmd, int head)
   char *path;
   pid_t cid;
   
-   
+  fflush(stdout);
   for(tail=head; tail<cmd->argc-1 && cmd->argv[tail][0] != '|' ; tail++);
     
   if(head == 0 && tail == cmd->argc -1)
@@ -486,44 +486,49 @@ pipeCommand(commandT* cmd, int head)
         {
 		close(pp[command][0]);
                 dup2(pp[command][1], STDOUT_FILENO);
-	        close(pp[command][1]);
-                        
+	        close(pp[command][1]); 
         }
         else if(tail != cmd->argc-1)
         {       
+                int cl;
+                for(cl=1; cl < command-1; cl++)
+                {
+                	close(pp[cl][0]);
+                        close(pp[cl][1]);
+                }                 
                 close(pp[command-1][1]);
 	        dup2(pp[command-1][0], STDIN_FILENO);
 	        close(pp[command-1][0]);
                                              
                 close(pp[command][0]);
 	        dup2(pp[command][1], STDOUT_FILENO);
-	        close(pp[command][1]);
+	        close(pp[command][1]);        
         }
         else
         {
-                close(pp[command-2][0]);
-                close(pp[command-2][1]);
-
+                int cl;
+                for(cl=1; cl < command-1; cl++)
+                {
+                	close(pp[cl][0]);
+                        close(pp[cl][1]);
+                }
                 close(pp[command-1][1]);
 	        dup2(pp[command-1][0], STDIN_FILENO);
 	        close(pp[command-1][0]);
                                              
                 close(pp[command][0]);
 	        close(pp[command][1]);
-        }
-                   
-                execv(path, argv);
+        }               
+                execv(path, argv);        
   }
   else
   {  
-  //      wait(0);
-  	head = tail+1;
-
+ 	head = tail+1; 
         if(head > cmd->argc)
            return 1;
-
         pipeCommand(cmd, head);
   }
+
   wait(0);
   return 1;
 }
