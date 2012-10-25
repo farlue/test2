@@ -114,14 +114,14 @@ static void
 IoRedirection(commandT* cmd);
 /* pipe symbol command */
 int
-pipeCommand(commandT* cmd);
+pipeCommand(commandT* cmd, int head);
 /* find path */
-static void
-findPath(commandT* cmd, char *name);
 /************External Declaration*****************************************/
 
 /**************Implementation***********************************************/
 
+  int pp[100][2];
+  int command = 0;
 
 /*
  * RunCmd
@@ -397,17 +397,18 @@ Exec(commandT* cmd, bool forceFork)
 //			cmd->argc--;
 //		}
 //		printf("%s\n", cmd->argv[cmd->argc-1]);
+                IoRedirection(cmd);
+                if(pipeCommand(cmd, 0))
+      	         	return;
+
 		execv(fullPath, cmd->argv);
 	}
 	else // parent
 	{
-          IoRedirection(cmd);
-          if(pipeCommand(cmd))
-          	return;
-	  char * fullPath = findCommand(cmd);
-	  execv(fullPath, cmd->argv);
-	  free(fullPath);
-
+//                IoRedirection(cmd);
+//                if(pipeCommand(cmd, 0))
+//      	         	return;
+            
 		char* command = malloc(PATHBUFSIZE);
 		strcpy(command, cmd->argv[0]);
 		int i;
@@ -441,118 +442,90 @@ Exec(commandT* cmd, bool forceFork)
 } /* Exec */
 
 
-static void
-findPath(commandT *cmd, char *name)
-{
-  char *list, *path, *temp, *local;
-
-  path = malloc(sizeof(char)*100);
-  local = malloc(sizeof(char)*100);
-
-  list = getenv("PATH");
-  strcpy(path,list);
-
-  temp = strtok(path,":");
-  while(temp != NULL)
-  {
-    strcpy(local,temp);
-    strcat(local,"/");
-    strcat(local,name);
-    if(open(local,O_RDONLY)!= -1)
-      strcpy(cmd->name, local);
-    temp = strtok(NULL,":");
-  }
-
-  free(path);
-  free(local);
-}
-
-
-
 int 
-pipeCommand(commandT* cmd)
+pipeCommand(commandT* cmd, int head)
 {
-  int head = 0, tail = 0, i = 0, j = 0;
-  int pp[100][2];
-  int command = 0;
+  int tail = 0, i = 0, j = 0;
   char *argv[10];
-  pid_t cid; 
-
-  for(tail=0; tail<cmd->argc-1; tail++)
-  {
-    if(cmd->argv[tail][0] == '|')
-    {
-        command++;      
-        /* preparing for the execution  */ 
- 	if(tail != cmd->argc-1)
-  	{
-        	for(i=head,j=0; i<tail; i++, j++)
-      			argv[j] = cmd->argv[i]; 
-    		argv[j] = (char *) 0;
-  	}
-  	else
-  	{
-        	for(i=head,j=0; i<=tail; i++, j++)
-     			argv[j] = cmd->argv[i]; 
-    		argv[j] = (char *) 0;
-  	}
-
-  	findPath(cmd,argv[0]);
+  char *path;
+  pid_t cid;
+  
+   
+  for(tail=head; tail<cmd->argc-1 && cmd->argv[tail][0] != '|' ; tail++);
+    
+  if(head == 0 && tail == cmd->argc -1)
+     return 0;     
  
-        printf("%s\n",cmd->name);
-       for(i = 0; argv[i]!=NULL; i++)
-            printf("%s ",argv[i]);
-        printf("\n");
+  /* preparing for the execution  */ 
+  if(tail != cmd->argc-1)
+  {
+  	for(i=head,j=0; i<tail; i++, j++)
+      		argv[j] = cmd->argv[i]; 
+    	argv[j] = (char *) 0;
+  }
+  else
+  {
+        for(i=head,j=0; i<=tail; i++, j++)
+     		argv[j] = cmd->argv[i]; 
+    	argv[j] = (char *) 0;
+  }
+        
+  cmd->name = argv[0];
+  path = findCommand(cmd);
 
-        head = tail + 1;
+  /* creat a pipe before fork() */
+  command++;
+  pipe(pp[command]);
 
-#if 0
-        pipe(pp[command]);
-        /* fork a child, execute the command and put the result into pipe[command][0] */ 
-        cid = fork();
-        if(cid == 0)
+  /* fork a child, execute the command 
+     and put the result into pipe[command][0] */ 
+  cid = fork();
+  if(cid == 0)
+  {
+  	if(head == 0)
         {
-        	if(head == 0)
-                {
-	        	close(pp[command][0]);
-                   	dup2(pp[command][1], STDOUT_FILENO);
-	        	close(pp[command][1]);
+		close(pp[command][0]);
+                dup2(pp[command][1], STDOUT_FILENO);
+	        close(pp[command][1]);
                         
-                }
-                else if(tail != cmd->argc-1)
-                {       
-                        close(pp[command-1][1]);
-			dup2(pp[command-1][0], STDIN_FILENO);
-	         	close(pp[command-1][0]);
-                                             
-                        close(pp[command][0]);
-			dup2(pp[command][1], STDOUT_FILENO);
-	        	close(pp[command][1]);
-                }
-		else
-                {
-                        close(pp[command-2][0]);
-                        close(pp[command-2][1]);
-
-                        close(pp[command-1][1]);
-			dup2(pp[command-1][0], STDIN_FILENO);
-	         	close(pp[command-1][0]);
-                                             
-                        close(pp[command][0]);
-	        	close(pp[command][1]);
-                }
-                   
-                execv(cmd->name,argv);
         }
-        else  
-        	head = tail+1;
-#endif
-    }//if '|'
-  }//for
-  if(head == 0 && tail == cmd->argc-1)                     
-  	return 0; // not a pipeCommand    
-  else 
-        return 1; 
+        else if(tail != cmd->argc-1)
+        {       
+                close(pp[command-1][1]);
+	        dup2(pp[command-1][0], STDIN_FILENO);
+	        close(pp[command-1][0]);
+                                             
+                close(pp[command][0]);
+	        dup2(pp[command][1], STDOUT_FILENO);
+	        close(pp[command][1]);
+        }
+        else
+        {
+                close(pp[command-2][0]);
+                close(pp[command-2][1]);
+
+                close(pp[command-1][1]);
+	        dup2(pp[command-1][0], STDIN_FILENO);
+	        close(pp[command-1][0]);
+                                             
+                close(pp[command][0]);
+	        close(pp[command][1]);
+        }
+                   
+                execv(path, argv);
+  }
+  else
+  {  
+  //      wait(0);
+  	head = tail+1;
+
+        if(head > cmd->argc)
+           return 1;
+
+        pipeCommand(cmd, head);
+  }
+  wait(0);
+  return 1;
 }
 
 
