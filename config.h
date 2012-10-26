@@ -47,7 +47,7 @@
 
 #define MAXLINE 120
 
-#define PATHBUFSIZE 512
+#define PATHBUFSIZE 2048
 
 #undef DEBUG_OUTPUT
 

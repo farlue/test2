@@ -391,7 +391,7 @@ Exec(commandT* cmd, bool forceFork)
 		sigprocmask(SIG_UNBLOCK, &chldSigset, NULL);
 		if (!forceFork)
 			cmd->argv[cmd->argc-1] = 0;
- 		int i, flag = 0;
+/* 		int i, flag = 0;
     for (i = 0; i < cmd->argc; i++)
     {
     	if (strchr(cmd->argv[i], '<') != NULL ||
@@ -407,7 +407,7 @@ Exec(commandT* cmd, bool forceFork)
      }          
      if(pipeCommand(cmd, 0))
        	return;
-		execv(fullPath, cmd->argv);
+*/		execv(fullPath, cmd->argv);
 	}
 	else // parent
 	{
@@ -690,7 +690,6 @@ RunBuiltInCmd(commandT* cmd)
 		{
 			num = atoi(cmd->argv[1]);
 			job = searchJobByNum(num);
-			
 			if (job != NULL && job->state == STOPPED)
 			{
 				transitProcState(job, RUNNING);
@@ -713,19 +712,25 @@ RunBuiltInCmd(commandT* cmd)
 		{
 			num = atoi(cmd->argv[1]);
 			job = searchJobByNum(num);
-
+//		printf("num: %d\tid: %d\n", num, job->pid);
+//			fflush(stdout);
 			if(job != NULL && job->state != TERMINATED)
 			{
 				fgjob = job->pid;
 				fgStatus = BUSY;
 				strcpy(fgCmd, job->cmd);
+//				printf("fg: %d\t%s\n", fgjob, fgCmd);
+//				fflush(stdout);
 				if (job->state == STOPPED)	
 					kill(-fgjob, SIGCONT);	// SIGCONT not going to sig
 				removeJob(job);
 				while (fgStatus != AVAIL)
 				{
+//				printf("waiting~~\n");
+//					fflush(stdout);
 					sleep(1);
 				}
+//				printf("foreground available\n");
 			}
 		}
 		else
@@ -884,10 +889,10 @@ PrintPrompt()
 void
 transitProcState(bgjobL* job, state_t newState)
 {
-	bgjobL* temp = NULL;
+//	bgjobL* temp = NULL;
 
 	job->state = newState;
-	if ((newState != TERMINATED) && (job->prev != NULL))
+/*	if ((newState != TERMINATED) && (job->prev != NULL))
 	{
 		temp = job->prev;
 		temp->next = job->next;
@@ -897,6 +902,7 @@ transitProcState(bgjobL* job, state_t newState)
 		job->next = bgjobs;
 		bgjobs = job;
 	}
+*/
 }
 
 bgjobL*
