@@ -113,8 +113,6 @@ findCommand(commandT* cmd);
 static void
 IoRedirection(commandT* cmd);
 /* pipe symbol command */
-int
-pipeCommand(commandT* cmd, int head);
 /* find path */
 /************External Declaration*****************************************/
 
@@ -122,7 +120,7 @@ pipeCommand(commandT* cmd, int head);
 
   int pp[100][2];
   int command = 0;
-
+ 
 /*
  * RunCmd
  *
@@ -203,6 +201,28 @@ RunCmdBg(commandT* cmd)
 void
 RunCmdPipe(commandT* cmd1, commandT* cmd2)
 {
+  int std_in, std_out;
+ 
+  /* parent process */
+  std_in = dup(0);
+  std_out = dup(1);
+
+  command++;
+  pipe(pp[command]);
+
+  dup2(pp[command][1],STDOUT_FILENO);
+  close(pp[command][1]);  
+
+  RunCmd(cmd1);
+
+  dup2(std_out,STDOUT_FILENO);
+      
+  dup2(pp[command][0],STDIN_FILENO);
+  close(pp[command][0]);
+
+  RunCmd(cmd2);
+  
+  dup2(std_in,STDIN_FILENO);
 } /* RunCmdPipe */
 
 
@@ -379,10 +399,49 @@ ResolveExternalCmd(commandT* cmd)
 static void
 Exec(commandT* cmd, bool forceFork)
 {
-	sigset_t chldSigset;
+	int head = 0 , tail = 0, i = 0, j = 0, count = 0;
+        commandT * cmd1 = malloc(sizeof(commandT) + sizeof(char *) *cmd->argc);
+        commandT * cmd2 = malloc(sizeof(commandT) + sizeof(char *) *cmd->argc);
+	
+        sigset_t chldSigset;
 	sigemptyset(&chldSigset);
 	sigaddset(&chldSigset, SIGCHLD);
 	sigprocmask(SIG_BLOCK, &chldSigset, NULL);
+       
+        for(i=0; i<=cmd->argc-1; i++)
+        	if(cmd->argv[i][0] == '|')
+                	count++;
+ 
+        if(count == 0)
+        {
+          //do nothing
+        }
+        else
+        {         
+        	for(tail=0; cmd->argv[tail][0]!='|' && tail < cmd->argc-1; tail++);           
+       
+        	if(tail != cmd->argc-1) 
+             		tail--;
+         
+        	for(i=0; i<=tail; i++)
+             		cmd1->argv[i] = cmd->argv[i];
+        	cmd1->argv[i] = 0;
+        	cmd1->argc = i;
+                cmd1->name = cmd1->argv[0];
+
+       	        head = tail + 2;            
+       		for(i=head, j=0; i<=cmd->argc-1; i++, j++)
+       			cmd2->argv[j] = cmd->argv[i];
+       		cmd2->argv[j] = 0;
+                cmd2->argc = j; 
+                cmd1->name = cmd1->argv[0];
+                cmd2->name = cmd2->argv[0];
+                   
+       		RunCmdPipe(cmd1, cmd2);      
+
+                return;    
+        }    
+                 
 
 	pid_t child_id = fork();
 	if (child_id == 0) // child
@@ -391,24 +450,20 @@ Exec(commandT* cmd, bool forceFork)
 		setpgid(0, 0);
 		sigprocmask(SIG_UNBLOCK, &chldSigset, NULL);
 		if (!forceFork)
-			cmd->argv[cmd->argc-1] = 0;
-//		{
-//			free(cmd->argv[cmd->argc-1]);
-//			cmd->argc--;
-//		}
-//		printf("%s\n", cmd->argv[cmd->argc-1]);
-                IoRedirection(cmd);
-                if(pipeCommand(cmd, 0))
-      	         	return;
+			cmd->argv[cmd->argc-1] = 0;         
+                
+                count = 0;
+                for(i=0;i<cmd->argc;i++)
+                	if(cmd->argv[i][0] == '<' || cmd->argv[i][0] == '>')
+                        	count++;
+                if(count)
+                	IoRedirection(cmd);
+
 
 		execv(fullPath, cmd->argv);
 	}
 	else // parent
-	{
-//                IoRedirection(cmd);
-//                if(pipeCommand(cmd, 0))
-//      	         	return;
-            
+	{            
 		char* command = malloc(PATHBUFSIZE);
 		strcpy(command, cmd->argv[0]);
 		int i;
@@ -440,99 +495,6 @@ Exec(commandT* cmd, bool forceFork)
 		free(command);
 	}
 } /* Exec */
-
-
-int 
-pipeCommand(commandT* cmd, int head)
-{
-  int tail = 0, i = 0, j = 0;
-  char *argv[10];
-  char *path;
-  pid_t cid;
-  
-  fflush(stdout);
-  for(tail=head; tail<cmd->argc-1 && cmd->argv[tail][0] != '|' ; tail++);
-    
-  if(head == 0 && tail == cmd->argc -1)
-     return 0;     
- 
-  /* preparing for the execution  */ 
-  if(tail != cmd->argc-1)
-  {
-  	for(i=head,j=0; i<tail; i++, j++)
-      		argv[j] = cmd->argv[i]; 
-    	argv[j] = (char *) 0;
-  }
-  else
-  {
-        for(i=head,j=0; i<=tail; i++, j++)
-     		argv[j] = cmd->argv[i]; 
-    	argv[j] = (char *) 0;
-  }
-        
-  cmd->name = argv[0];
-  path = findCommand(cmd);
-
-  /* creat a pipe before fork() */
-  command++;
-  pipe(pp[command]);
-
-  /* fork a child, execute the command 
-     and put the result into pipe[command][0] */ 
-  cid = fork();
-  if(cid == 0)
-  {
-  	if(head == 0)
-        {
-		close(pp[command][0]);
-                dup2(pp[command][1], STDOUT_FILENO);
-	        close(pp[command][1]); 
-        }
-        else if(tail != cmd->argc-1)
-        {       
-                int cl;
-                for(cl=1; cl < command-1; cl++)
-                {
-                	close(pp[cl][0]);
-                        close(pp[cl][1]);
-                }                 
-                close(pp[command-1][1]);
-	        dup2(pp[command-1][0], STDIN_FILENO);
-	        close(pp[command-1][0]);
-                                             
-                close(pp[command][0]);
-	        dup2(pp[command][1], STDOUT_FILENO);
-	        close(pp[command][1]);        
-        }
-        else
-        {
-                int cl;
-                for(cl=1; cl < command-1; cl++)
-                {
-                	close(pp[cl][0]);
-                        close(pp[cl][1]);
-                }
-                close(pp[command-1][1]);
-	        dup2(pp[command-1][0], STDIN_FILENO);
-	        close(pp[command-1][0]);
-                                             
-                close(pp[command][0]);
-	        close(pp[command][1]);
-        }               
-                execv(path, argv);        
-  }
-  else
-  {  
- 	head = tail+1; 
-        if(head > cmd->argc)
-           return 1;
-        pipeCommand(cmd, head);
-  }
-
-  wait(0);
-  return 1;
-}
-
 
 static void
 IoRedirection(commandT* cmd)
