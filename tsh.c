@@ -48,7 +48,7 @@ sig(int);
 extern pid_t fgjob;
 extern status_t fgStatus;
 extern char* fgCmd;
-
+extern int jobNum;
 /*
  * runtshrc
  * arguments: void
@@ -181,9 +181,7 @@ sig(int signo)
 	switch (signo)
 	{
 		case SIGINT:
-			if (fgjob == 0)
-				exit(0);
-			else
+			if (fgjob != 0)
 			{
 				fgStatus = KILLED;
 				kill(-fgjob, SIGINT);
@@ -204,9 +202,11 @@ sig(int signo)
 				switch (fgStatus)
 				{
 					case KILLED:
-						addJob(fgCmd, chldPID, TERMINATED);
+//						addJob(fgCmd, chldPID, TERMINATED);
 						break;
 					case SUSPENDED:
+						printf("\n[%d]\tStopped\t\t\t%s\n", jobNum, fgCmd);
+						fflush(stdout);
 						addJob(fgCmd, chldPID, STOPPED);
 						break;
 					case BUSY:
@@ -214,6 +214,7 @@ sig(int signo)
 					case AVAIL:
 						break;
 					default:
+						printf("ERROR: incorrect status\n");
 						exit(0);
 				}
 				fgjob = 0;
@@ -226,13 +227,14 @@ sig(int signo)
 				{
 					case RUNNING:
 						transitProcState(job, TERMINATED);
-//						printf("[%d]\tDone\t\t\t%s\n", job->num, job->cmd);
-//						fflush(stdout);
+						printf("[%d]\tDone\t\t\t%s\n", job->num, job->cmd);
+						fflush(stdout);
 						break;
-					case STOPPED:
-						transitProcState(job, RUNNING);
+					case STOPPED:  // not coming ?
+						printf("never coming here?\n");
 						break;
 					default:
+						printf("ERROR: incorrect state\n");
 						exit(0);
 				}
 			}
@@ -242,24 +244,3 @@ sig(int signo)
 			exit(0);
 	}
 } /* sig */
-/*
-  if (signo == SIGINT) 
-    {
-//       only handle SIGINT for now 
-      if (fgjob == 0) 
-	{
-//	   if there is no fore ground job, exit (same as tsh-ref) 
-	  exit(0);
-	}
-      else 
-	{
-//	   kill the fore ground job 
-	  if (getpid() != fgjob) 
-	    {
-//	       kill the fore ground job from the shell process 
-	      kill(fgjob, SIGINT);
-	      fgjob = 0;
-	    }
-	}
-    }
-*/

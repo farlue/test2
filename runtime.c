@@ -83,7 +83,6 @@ bgjobL *bgjobs = NULL;
 /* the pid of fore ground process, if the shell is in fore ground */ 
 pid_t fgjob = 0;
 
-
 status_t fgStatus;
 char* fgCmd;
 
@@ -392,30 +391,37 @@ Exec(commandT* cmd, bool forceFork)
 		sigprocmask(SIG_UNBLOCK, &chldSigset, NULL);
 		if (!forceFork)
 			cmd->argv[cmd->argc-1] = 0;
-//		{
-//			free(cmd->argv[cmd->argc-1]);
-//			cmd->argc--;
-//		}
-//		printf("%s\n", cmd->argv[cmd->argc-1]);
-                IoRedirection(cmd);
-                if(pipeCommand(cmd, 0))
-      	         	return;
-
+ 		int i, flag = 0;
+    for (i = 0; i < cmd->argc; i++)
+    {
+    	if (strchr(cmd->argv[i], '<') != NULL ||
+            strchr(cmd->argv[i], '>') != NULL)
+      {
+      	flag = 1;
+        break;
+      }
+     } 
+     if (flag == 1)
+     {
+       IoRedirection(cmd);
+     }          
+     if(pipeCommand(cmd, 0))
+       	return;
 		execv(fullPath, cmd->argv);
 	}
 	else // parent
 	{
-//                IoRedirection(cmd);
-//                if(pipeCommand(cmd, 0))
-//      	         	return;
-            
 		char* command = malloc(PATHBUFSIZE);
 		strcpy(command, cmd->argv[0]);
 		int i;
 		for (i = 1; i < cmd->argc; i++)
 		{
 			strcat(command, " ");
+			if (strcmp(cmd->argv[0], "bash") == 0 && i == 2)
+				strcat(command, "\"");
 			strcat(command, cmd->argv[i]);
+			if (strcmp(cmd->argv[0], "bash") == 0 && i == 2)
+				strcat(command, "\"");
 		}
 
 		if (forceFork)
@@ -434,13 +440,13 @@ Exec(commandT* cmd, bool forceFork)
 		{	
 			fgjob = 0;
 			fgStatus = AVAIL;
+			command[strlen(command)-1] = '\0';
 			addJob(command, child_id, RUNNING);
 			sigprocmask(SIG_UNBLOCK, &chldSigset, NULL);
 		}
 		free(command);
 	}
 } /* Exec */
-
 
 int 
 pipeCommand(commandT* cmd, int head)
@@ -572,7 +578,6 @@ IoRedirection(commandT* cmd)
 }
 
 
-
 /*
  * IsBuiltIn
  *
@@ -687,13 +692,19 @@ RunBuiltInCmd(commandT* cmd)
 			job = searchJobByNum(num);
 			
 			if (job != NULL && job->state == STOPPED)
+			{
+				transitProcState(job, RUNNING);
 				kill(-job->pid, SIGCONT);
+			}
 		}
 		else
 		{
 			job = searchJobByState(STOPPED);
 			if (job != NULL)
+			{
+				transitProcState(job, RUNNING);
 				kill(-job->pid, SIGCONT);
+			}
 		}
 	}
 	else if (strcmp(cmd->name, "fg") == 0)
@@ -702,12 +713,14 @@ RunBuiltInCmd(commandT* cmd)
 		{
 			num = atoi(cmd->argv[1]);
 			job = searchJobByNum(num);
-			
-			if(job != NULL && job->state == RUNNING)
+
+			if(job != NULL && job->state != TERMINATED)
 			{
 				fgjob = job->pid;
 				fgStatus = BUSY;
 				strcpy(fgCmd, job->cmd);
+				if (job->state == STOPPED)	
+					kill(-fgjob, SIGCONT);	// SIGCONT not going to sig
 				removeJob(job);
 				while (fgStatus != AVAIL)
 				{
@@ -718,11 +731,16 @@ RunBuiltInCmd(commandT* cmd)
 		else
 		{
 			job = searchJobByState(RUNNING);
+			if (job == NULL)
+				job = searchJobByState(STOPPED);
 			if (job != NULL)
 			{
 				fgjob = job->pid;
 				fgStatus = BUSY;
 				strcpy(fgCmd, job->cmd);
+				setpgid(fgjob, fgjob);
+				if (job->state == STOPPED)
+					kill(-fgjob, SIGCONT);
 				removeJob(job);
 				while (fgStatus != AVAIL)
 				{
@@ -740,7 +758,7 @@ RunBuiltInCmd(commandT* cmd)
 			job = searchJobByNum(i);
 			if (job != NULL && job->state == RUNNING)
 			{
-				printf("[%d]\tRunning\t\t\t%s\n", job->num, job->cmd);
+				printf("[%d]\tRunning\t\t\t%s\t&\n", job->num, job->cmd);
 				fflush(stdout);
 			}
 			if (job != NULL && job->state == STOPPED)
@@ -786,24 +804,17 @@ RunBuiltInCmd(commandT* cmd)
  */
 void
 CheckJobs()
-{
-/*
+{ 
+
 	bgjobL* job = bgjobs;
-	bgjobL* temp = NULL;
 	while (job != NULL)
 	{
-		if (job->state == TERMINATED)
-		{
-//				printf("[%d]\tDone\t\t\t%s\n", job->num, job->cmd);
-				fflush(stdout);
-				temp = job;
-				job = job->next;
-				removeJob(temp);
-		}
-		else
-			job = job->next;
+		if (job->state == RUNNING || job->state == STOPPED)
+			return;
+//		printf("job num:%d\t\t%s\n", job->num, job->cmd);
+		job = job->next;
 	}
-*/
+	jobNum = 1;
 } /* CheckJobs */
 
 /*
@@ -979,6 +990,11 @@ removeJob(bgjobL* job)
 	}
 	job->prev = NULL;
 	job->next = NULL;
+  job->num = 0;
+	job->state = TERMINATED;
 	free(job->cmd);
 	free(job);
+	fflush(stdin);
+	fflush(stdout);
+	CheckJobs();
 }
