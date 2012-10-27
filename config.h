@@ -45,9 +45,9 @@
 
 #define SHELLNAME "tsh"
 
-#define MAXLINE 120
+#define MAXLINE 500
 
-#define PATHBUFSIZE 2048
+#define PATHBUFSIZE 1024
 
 #undef DEBUG_OUTPUT
 

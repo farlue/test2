@@ -254,32 +254,10 @@ RunCmdRedirOut(commandT* cmd, char* file)
  * Runs a command, redirecting a file to standard input.
  */
 
-#if 0
 void
 RunCmdRedirIn(commandT* cmd, char* file)
 {
-
-  /* input redirection*/
-
-  for(i=1; i<cmd->argc; i++)
-  {
-    if(cmd->argv[i][0] == '<')
-    {
-      ifp = open(cmd->argv[i+1], O_RDWR | O_CREAT, S_IRWXU);
-      close(0);
-      dup2(ifp,0);
-      close(ifp);
-      for(j=i; j<cmd->argc; j++)
-      	cmd->argv[j] = cmd->argv[j+2];
-      cmd->argc = cmd->argc - 2;
-    }
-  }                                        
-
-
-
 }  /* RunCmdRedirIn */
-#endif
-
 /*
  * RunExternalCmd
  *
@@ -421,15 +399,16 @@ Exec(commandT* cmd, bool forceFork)
 {
 
 	int head = 0 , tail = 0, i = 0, j = 0, count = 0;
-        commandT * cmd1 = malloc(sizeof(commandT) + sizeof(char *) *cmd->argc);
-        commandT * cmd2 = malloc(sizeof(commandT) + sizeof(char *) *cmd->argc);
+  commandT * cmd1 = malloc(sizeof(commandT) + sizeof(char *) *cmd->argc);
+  commandT * cmd2 = malloc(sizeof(commandT) + sizeof(char *) *cmd->argc);
 	
-        sigset_t chldSigset;
+  sigset_t chldSigset;
 	sigemptyset(&chldSigset);
 	sigaddset(&chldSigset, SIGCHLD);
 	sigprocmask(SIG_BLOCK, &chldSigset, NULL);
-//#if 0       
-        for(i=0; i<=cmd->argc-1; i++)
+
+	// Recursive Pipe command handler  
+      for(i=0; i<=cmd->argc-1; i++)
         	if(cmd->argv[i][0] == '|')
                 	count++;
  
@@ -463,22 +442,8 @@ Exec(commandT* cmd, bool forceFork)
                 return;    
         }    
                  
-//#endif
-
-/*
-                int c = 0;
-                for(i=0;i<cmd->argc;i++)
-                	if(cmd->argv[i][0] == '<' || cmd->argv[i][0] == '>')
-                        	c++;
-                 
-                if(c)
-                {
-                	IoRedirection(cmd);
-                        count = 0;
-                }
-*/
 	pid_t child_id = fork();
-	if (child_id == 0) // child
+	if (child_id == 0) // child process
 	{
 		char* fullPath = findCommand(cmd);
 		setpgid(0, 0);
@@ -502,8 +467,8 @@ Exec(commandT* cmd, bool forceFork)
                 }
 
 		execv(fullPath, cmd->argv);
-}
-	else // parent
+	}
+	else // parent process
 	{            
 		char* command = malloc(PATHBUFSIZE);
 		strcpy(command, cmd->argv[0]);
@@ -541,7 +506,8 @@ Exec(commandT* cmd, bool forceFork)
 		free(command);
 	}
 } /* Exec */
-//#if 0
+
+// IO Redirection function
 static void
 IoRedirection(commandT* cmd)
 {
@@ -553,7 +519,6 @@ IoRedirection(commandT* cmd)
     if(cmd->argv[i][0] == '>')
     {
       ofp = open(cmd->argv[i+1], O_RDWR | O_CREAT, S_IRWXU);
-//      close(1);
       dup2(ofp,1);
       close(ofp);
       cmd->argv[i] = NULL;
@@ -567,7 +532,6 @@ IoRedirection(commandT* cmd)
     if(cmd->argv[i][0] == '<')
     {
       ifp = open(cmd->argv[i+1], O_RDWR | O_CREAT, S_IRWXU);
-//      close(0);
       dup2(ifp,0);
       close(ifp);
       for(j=i; j<cmd->argc-2; j++)
@@ -688,9 +652,9 @@ RunBuiltInCmd(commandT* cmd)
       free(var);
       fflush(stdout);
     }
-	else if (strcmp(cmd->name, "bg") == 0)
+	else if (strcmp(cmd->name, "bg") == 0) // background job
 	{
-		if (cmd->argc == 2)
+		if (cmd->argc == 2)	// bg with pid
 		{
 			num = atoi(cmd->argv[1]);
 			job = searchJobByNum(num);
@@ -700,7 +664,7 @@ RunBuiltInCmd(commandT* cmd)
 				kill(-job->pid, SIGCONT);
 			}
 		}
-		else
+		else // bg without pid
 		{
 			job = searchJobByState(STOPPED);
 			if (job != NULL)
@@ -710,34 +674,27 @@ RunBuiltInCmd(commandT* cmd)
 			}
 		}
 	}
-	else if (strcmp(cmd->name, "fg") == 0)
+	else if (strcmp(cmd->name, "fg") == 0) // foreground job
 	{
-		if (cmd->argc == 2)
+		if (cmd->argc == 2) // fg with pid
 		{
 			num = atoi(cmd->argv[1]);
 			job = searchJobByNum(num);
-//		printf("num: %d\tid: %d\n", num, job->pid);
-//			fflush(stdout);
 			if(job != NULL && job->state != TERMINATED)
 			{
 				fgjob = job->pid;
 				fgStatus = BUSY;
 				strcpy(fgCmd, job->cmd);
-//				printf("fg: %d\t%s\n", fgjob, fgCmd);
-//				fflush(stdout);
 				if (job->state == STOPPED)	
 					kill(-fgjob, SIGCONT);	// SIGCONT not going to sig
 				removeJob(job);
 				while (fgStatus != AVAIL)
 				{
-//				printf("waiting~~\n");
-//					fflush(stdout);
 					sleep(1);
 				}
-//				printf("foreground available\n");
 			}
 		}
-		else
+		else // fg without pid
 		{
 			job = searchJobByState(RUNNING);
 			if (job == NULL)
@@ -758,19 +715,19 @@ RunBuiltInCmd(commandT* cmd)
 			}
 		}
 	}
-	else if (strcmp(cmd->name, "jobs") == 0)
+	else if (strcmp(cmd->name, "jobs") == 0) // jobs
 	{
 		int i;
 		bgjobL* job;
 		for (i = 1; i < jobNum; i++)
 		{
 			job = searchJobByNum(i);
-			if (job != NULL && job->state == RUNNING)
+			if (job != NULL && job->state == RUNNING) // print out running jobs
 			{
 				printf("[%d]\tRunning\t\t\t%s\t&\n", job->num, job->cmd);
 				fflush(stdout);
 			}
-			if (job != NULL && job->state == STOPPED)
+			if (job != NULL && job->state == STOPPED) // print out stopped jobs
 			{
 				printf("[%d]\tStopped\t\t\t%s\n", job->num, job->cmd);
 				fflush(stdout);
@@ -778,7 +735,7 @@ RunBuiltInCmd(commandT* cmd)
 
 		}
 	}
-  else if (strcmp(cmd->name, "alias") == 0)
+  else if (strcmp(cmd->name, "alias") == 0) // alias
     {
       /* print the alias map or create a new alias */
       if (cmd->argc == 1)
@@ -790,7 +747,7 @@ RunBuiltInCmd(commandT* cmd)
           createAlias(cmd->argv[1]);
         }
     }
-  else if (strcmp(cmd->name, "unalias") == 0 && cmd->argc == 2)
+  else if (strcmp(cmd->name, "unalias") == 0 && cmd->argc == 2) //unalias
     {
       /* remove an alias entry from the alias map */
       if (!removeAlias(cmd->argv[1]))
@@ -820,7 +777,6 @@ CheckJobs()
 	{
 		if (job->state == RUNNING || job->state == STOPPED)
 			return;
-//		printf("job num:%d\t\t%s\n", job->num, job->cmd);
 		job = job->next;
 	}
 	jobNum = 1;
@@ -893,8 +849,6 @@ PrintPrompt()
 void
 transitProcState(bgjobL* job, state_t newState)
 {
-//	bgjobL* temp = NULL;
-
 	job->state = newState;
 /*	if ((newState != TERMINATED) && (job->prev != NULL))
 	{
@@ -909,6 +863,7 @@ transitProcState(bgjobL* job, state_t newState)
 */
 }
 
+// search the specific job in the list by its process id
 bgjobL*
 searchJobByID(pid_t pid)
 {
@@ -923,6 +878,7 @@ searchJobByID(pid_t pid)
 	return job;
 }
 
+// search job in the list by its job num
 bgjobL*
 searchJobByNum(int num)
 {
@@ -936,6 +892,7 @@ searchJobByNum(int num)
 	return job;
 }
 
+// search the specific state job in the list
 bgjobL*
 searchJobByState(state_t state)
 {
@@ -949,6 +906,7 @@ searchJobByState(state_t state)
 	return job;
 }
 
+// add new job to the list and assign the job state
 void
 addJob(char* command, pid_t pid, state_t state)
 {
@@ -972,6 +930,7 @@ addJob(char* command, pid_t pid, state_t state)
 #endif
 }
 
+// remove the job from the list
 void
 removeJob(bgjobL* job)
 {
