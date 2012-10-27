@@ -202,23 +202,32 @@ sig(int signo)
 				switch (fgStatus)
 				{
 					case KILLED:
+//						printf("id: %d\t%s\n", fgjob, fgCmd);
+						fgjob = 0;
+						fgStatus = AVAIL;
+//					printf("foreground job terminated by sigint!\n");
 //						addJob(fgCmd, chldPID, TERMINATED);
 						break;
 					case SUSPENDED:
 						printf("\n[%d]\tStopped\t\t\t%s\n", jobNum, fgCmd);
 						fflush(stdout);
 						addJob(fgCmd, chldPID, STOPPED);
+						fgjob = 0;
+						fgStatus = AVAIL;
 						break;
 					case BUSY:
+//						printf("id: %d\t%s\n", fgjob, fgCmd);
+						fgjob = 0;
+						fgStatus = AVAIL;
+//						printf("foreground job terminated!\n");
 						break;
 					case AVAIL:
+//						printf("should never be here!!%d\n", fgjob);
 						break;
 					default:
 						printf("ERROR: incorrect status\n");
 						exit(0);
 				}
-				fgjob = 0;
-				fgStatus = AVAIL;
 			}
 			else // process from background 
 			{

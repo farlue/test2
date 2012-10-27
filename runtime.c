@@ -253,11 +253,32 @@ RunCmdRedirOut(commandT* cmd, char* file)
  *
  * Runs a command, redirecting a file to standard input.
  */
+
+#if 0
 void
 RunCmdRedirIn(commandT* cmd, char* file)
 {
-}  /* RunCmdRedirIn */
 
+  /* input redirection*/
+
+  for(i=1; i<cmd->argc; i++)
+  {
+    if(cmd->argv[i][0] == '<')
+    {
+      ifp = open(cmd->argv[i+1], O_RDWR | O_CREAT, S_IRWXU);
+      close(0);
+      dup2(ifp,0);
+      close(ifp);
+      for(j=i; j<cmd->argc; j++)
+      	cmd->argv[j] = cmd->argv[j+2];
+      cmd->argc = cmd->argc - 2;
+    }
+  }                                        
+
+
+
+}  /* RunCmdRedirIn */
+#endif
 
 /*
  * RunExternalCmd
@@ -398,6 +419,7 @@ ResolveExternalCmd(commandT* cmd)
 static void
 Exec(commandT* cmd, bool forceFork)
 {
+
 	int head = 0 , tail = 0, i = 0, j = 0, count = 0;
         commandT * cmd1 = malloc(sizeof(commandT) + sizeof(char *) *cmd->argc);
         commandT * cmd2 = malloc(sizeof(commandT) + sizeof(char *) *cmd->argc);
@@ -406,7 +428,7 @@ Exec(commandT* cmd, bool forceFork)
 	sigemptyset(&chldSigset);
 	sigaddset(&chldSigset, SIGCHLD);
 	sigprocmask(SIG_BLOCK, &chldSigset, NULL);
-       
+//#if 0       
         for(i=0; i<=cmd->argc-1; i++)
         	if(cmd->argv[i][0] == '|')
                 	count++;
@@ -441,30 +463,48 @@ Exec(commandT* cmd, bool forceFork)
                 return;    
         }    
                  
+//#endif
 
+/*
+                int c = 0;
+                for(i=0;i<cmd->argc;i++)
+                	if(cmd->argv[i][0] == '<' || cmd->argv[i][0] == '>')
+                        	c++;
+                 
+                if(c)
+                {
+                	IoRedirection(cmd);
+                        count = 0;
+                }
+*/
 	pid_t child_id = fork();
 	if (child_id == 0) // child
 	{
 		char* fullPath = findCommand(cmd);
 		setpgid(0, 0);
 		sigprocmask(SIG_UNBLOCK, &chldSigset, NULL);
+
 		if (!forceFork)
-
 			cmd->argv[cmd->argc-1] = 0;         
-                
-                count = 0;
-                for(i=0;i<cmd->argc;i++)
-                	if(cmd->argv[i][0] == '<' || cmd->argv[i][0] == '>')
-                        	count++;
-                if(count)
-                	IoRedirection(cmd);
 
+                int c = 0;
+                for(i=0;i<cmd->argc;i++)
+                {      
+                        if(cmd->argv[i] == NULL)
+                        	continue;
+                	else if(cmd->argv[i][0] == '<' || cmd->argv[i][0] == '>')
+                        	c++;
+                } 
+                if(c)
+                {
+                	IoRedirection(cmd);
+                        c = 0;
+                }
 
 		execv(fullPath, cmd->argv);
-	}
+}
 	else // parent
 	{            
-		cmd->argv[cmd->argc-1] = 0;
 		char* command = malloc(PATHBUFSIZE);
 		strcpy(command, cmd->argv[0]);
 		int i;
@@ -501,18 +541,19 @@ Exec(commandT* cmd, bool forceFork)
 		free(command);
 	}
 } /* Exec */
-
+//#if 0
 static void
 IoRedirection(commandT* cmd)
 {
   int i, j, ifp, ofp;
+
   /* output redirection  */
   for(i=1; i<cmd->argc; i++)
   {
     if(cmd->argv[i][0] == '>')
     {
       ofp = open(cmd->argv[i+1], O_RDWR | O_CREAT, S_IRWXU);
-      close(1);
+//      close(1);
       dup2(ofp,1);
       close(ofp);
       cmd->argv[i] = NULL;
@@ -526,11 +567,12 @@ IoRedirection(commandT* cmd)
     if(cmd->argv[i][0] == '<')
     {
       ifp = open(cmd->argv[i+1], O_RDWR | O_CREAT, S_IRWXU);
-      close(0);
+//      close(0);
       dup2(ifp,0);
       close(ifp);
-      for(j=i; j<cmd->argc; j++)
+      for(j=i; j<cmd->argc-2; j++)
         cmd->argv[j] = cmd->argv[j+2];
+      cmd->argv[j] = NULL;
       cmd->argc = cmd->argc - 2;
     }
   }
@@ -538,7 +580,7 @@ IoRedirection(commandT* cmd)
 
 
 }
-
+//#endif
 
 /*
  * IsBuiltIn
@@ -652,7 +694,6 @@ RunBuiltInCmd(commandT* cmd)
 		{
 			num = atoi(cmd->argv[1]);
 			job = searchJobByNum(num);
-			
 			if (job != NULL && job->state == STOPPED)
 			{
 				transitProcState(job, RUNNING);
@@ -675,19 +716,25 @@ RunBuiltInCmd(commandT* cmd)
 		{
 			num = atoi(cmd->argv[1]);
 			job = searchJobByNum(num);
-
+//		printf("num: %d\tid: %d\n", num, job->pid);
+//			fflush(stdout);
 			if(job != NULL && job->state != TERMINATED)
 			{
 				fgjob = job->pid;
 				fgStatus = BUSY;
 				strcpy(fgCmd, job->cmd);
+//				printf("fg: %d\t%s\n", fgjob, fgCmd);
+//				fflush(stdout);
 				if (job->state == STOPPED)	
 					kill(-fgjob, SIGCONT);	// SIGCONT not going to sig
 				removeJob(job);
 				while (fgStatus != AVAIL)
 				{
+//				printf("waiting~~\n");
+//					fflush(stdout);
 					sleep(1);
 				}
+//				printf("foreground available\n");
 			}
 		}
 		else
@@ -846,10 +893,10 @@ PrintPrompt()
 void
 transitProcState(bgjobL* job, state_t newState)
 {
-	bgjobL* temp = NULL;
+//	bgjobL* temp = NULL;
 
 	job->state = newState;
-	if ((newState != TERMINATED) && (job->prev != NULL))
+/*	if ((newState != TERMINATED) && (job->prev != NULL))
 	{
 		temp = job->prev;
 		temp->next = job->next;
@@ -859,6 +906,7 @@ transitProcState(bgjobL* job, state_t newState)
 		job->next = bgjobs;
 		bgjobs = job;
 	}
+*/
 }
 
 bgjobL*
