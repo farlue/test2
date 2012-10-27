@@ -1,0 +1,75 @@
+.\" Process this file with
+.\" groff -man -Tascii tsh.2
+.\"
+.TH TSH 2 "OCTOBER 2012" "NU EECS 343" "NU EECS 343 - Operating Systems - Fall 2012"
+.SH NAME
+tsh \- A tiny shell
+.SH SYNOPSIS
+.B tsh
+.SH DESCRIPTION
+.B tsh part 1:
+tsh is a simplified UNIX C shell. It takes in command lines from either user interaction, or a shell script, and interpret them. If the command is built-in, tsh will execute it. If the command is external, tsh will try to find the command in $PATH or a given full path and execute it, and if it is not found, tsh will report the situation. tsh also handles interrupts.
+
+.B tsh part 2:
+tsh also allows putting a process to backgroud and bring it back to foreground, and handles signals like SIGSTP and SITCONT. IO redirection, pipes and aliases are also supported.
+
+.SH BUILT-IN COMMANDS part 1:
+.IP exit
+Quit tsh
+.IP cd
+Go to the directory specified by the argument, or go to the current user's home directory if there is no argument
+.IP VAR=value
+Set environment value
+
+.SH BUILT-IN COMMANDS part 2:
+.IP bg
+Send SIGCONT to a backgroud job, and let it resume running in the background. It takes an optional argument, defaulting to the most recently backgrounded job.
+.IP fg
+Return a background job to the foreground. It takes an optional argument that works the same way as bg.
+.IP jobs
+Print out a table of all currently running jobs.
+.IP alias
+Create an alias if there is an argument, which records a word that substitutes a string and can be used as the first word of a simple command. If there is not an argument, print out all the aliases defined by the user.
+.IP unalias
+Remove a an alias.
+
+.SH DESIGN APPROACH
+Part 1:
+
+When the shell starts, the environment variable $PS1 is printed as a prompt for each command. Also upon start, tsh tries to read a .tshrc file and handle the command lines in there (function runtshrc() in tsh.c). Then, tsh gets command lines from user interaction or a shell script and handle them (function main() in tsh.c calls function Interpret() in interpreter.c). It took me a while to figure out what the script command does, and how it is related to the .tshrc file.
+
+To handle a command line, after reading it in, tsh determines whether it is built-in or external (function IsBuiltIn() in runtime.c). For built-in command, tsh implements it directly (function RunBuiltInCmd() in runtime.c). For external command, tsh tries to find it in the given full path or $PATH (function findCommand() in runtime.c), and execute it by forking a child process (function RunExternalCmd() in runtime.c). Implementing all those fuctions requires careful consideration of every detail and corner case, which took some testing and debugging.
+
+After a command is handled, it gets freed (function freeCommand() in interpreter.c).
+
+Interrupts are handled by function sig() in tsh.c.
+
+All four extra credit cases are implemented and they all pass the test.
+
+Part 2:
+
+For the process control, we designed a data structure to store the information for each process including the process id, job num, command string, process state and two pointers to the previous and next process in the background job list. The background job list is a double linked list keeping track of the running and stopped jobs in the background. We also use some global variables to keep the status of the foreground process. We have several functions used to manipulate the background jobs such adding/deleting a job to the job list, changing the state of a background job and search the specific job in the list.
+
+For the signal handler, we use the idea of Finite State Machine to control the jobs between the foreground and background. Every time, a signal (SIGINT, SIGTSTP, or SIGCHLD) was sent to the handler, the signal handler to change the process state, foreground/background jobs accordingly.
+
+I/O Redirection: 
+(1) use the fp = open("name", O_RDWR | O_CREAT, S_IRWXU); function to create the redirect file. The "S_IRWXU" option must be used otherwise the created new file is readonly. 
+(2) the dup2(fp, STDIN_FILENO); is the key function to redirect the standard input or standard output into the file.
+(3) the "> filename" or "< filename" part should be removed from the cmd->argv otherwise the execv() will not figure them out.
+
+PipeCommand
+(1) the dup2(fp[1], STDOUT_FILENO) is the key function to remap the process's standard output stream into the pipe's write end.
+(2) if there are multiple pipes in the system, each child process should close all the pipe entries that it will not use. otherwise, the output error will happens.
+(3) in the parent process, redirect the input and output to the pipe, and call RunCmd(), the forked child process will inherit the file descriptor from its parent and can directly do I/O with the pipe. After the fork, the parent process should redirect its I/O into the std_in or std_out
+
+Alias is implemented mainly in interpreter.c. A double-linked list is used to store the alias map. A few functions, including findAlias(), createAlias(), removeAlias() are written to find, add and remove aliases. Another function expandCmdWithAlias() recursively finds aliases within the command and expands the alias to its full text. printAlias() prints all the aliases in the alias map. expandCmdWithAlias() is called by getCommand(). printAlias(), createAlias() and removeAlias() are called by RunBuiltInCmd() in runtime.c.
+
+.SH TEST RESULT part 2
+Our code was tested on tlab-06 and tlab-10. All 30 test cases passed, including the extra. There are some output mismatch, such as different output order and more "Done" than the reference output. But gladly, this should be considered pass according to some threads in the course mailing list. We are attaching an output snapshot for your reference.
+
+.SH AUTHOR part 2:
+Yuanbo Fan, netId "yfw492", yuanbo@u.northwestern.edu
+
+Chao Yan, netId "cya410", chaoyan2012@u.northwestern.edu
+
+Feng Lu, netId "flu566", fenglu2014@u.northwestern.edu

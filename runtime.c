@@ -550,7 +550,7 @@ IoRedirection(commandT* cmd)
   /* output redirection  */
   for(i=1; i<cmd->argc; i++)
   {
-    if(cmd->argv[i][0] == '>')
+    if(cmd->argv[i] != NULL && cmd->argv[i][0] == '>')
     {
       ofp = open(cmd->argv[i+1], O_RDWR | O_CREAT, S_IRWXU);
 //      close(1);
@@ -564,7 +564,7 @@ IoRedirection(commandT* cmd)
     
   for(i=1; i<cmd->argc; i++)
   {
-    if(cmd->argv[i][0] == '<')
+    if(cmd->argv[i] != NULL && cmd->argv[i][0] == '<')
     {
       ifp = open(cmd->argv[i+1], O_RDWR | O_CREAT, S_IRWXU);
 //      close(0);
