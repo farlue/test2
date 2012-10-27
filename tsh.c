@@ -180,49 +180,43 @@ sig(int signo)
 
 	switch (signo)
 	{
-		case SIGINT:
+		case SIGINT:	// SIGINT to foreground job
 			if (fgjob != 0)
 			{
 				fgStatus = KILLED;
 				kill(-fgjob, SIGINT);
 			}
 			break;
-		case SIGTSTP:
+		case SIGTSTP:	// SIGTSTP to foreground job
 			if (fgjob != 0)
 			{
 				fgStatus = SUSPENDED;
 				kill(-fgjob, SIGTSTP);
 			}
 			break;
-		case SIGCHLD:
+		case SIGCHLD:	// SIGCHLD to foreground job
 			chldPID = waitpid(-1, &status, WUNTRACED | WNOHANG);
 
 			if (chldPID == fgjob) // process from foreground
 			{
 				switch (fgStatus)
 				{
-					case KILLED:
-//						printf("id: %d\t%s\n", fgjob, fgCmd);
+					case KILLED:	// killed by SIGINT
 						fgjob = 0;
 						fgStatus = AVAIL;
-//					printf("foreground job terminated by sigint!\n");
-//						addJob(fgCmd, chldPID, TERMINATED);
 						break;
-					case SUSPENDED:
+					case SUSPENDED:	// STOPPED BY SIGTSTP
 						printf("\n[%d]\tStopped\t\t\t%s\n", jobNum, fgCmd);
 						fflush(stdout);
 						addJob(fgCmd, chldPID, STOPPED);
 						fgjob = 0;
 						fgStatus = AVAIL;
 						break;
-					case BUSY:
-//						printf("id: %d\t%s\n", fgjob, fgCmd);
+					case BUSY:	// TERMINATED NORMALLY
 						fgjob = 0;
 						fgStatus = AVAIL;
-//						printf("foreground job terminated!\n");
 						break;
-					case AVAIL:
-//						printf("should never be here!!%d\n", fgjob);
+					case AVAIL: // INCORRECT STATE
 						break;
 					default:
 						printf("ERROR: incorrect status\n");
@@ -234,12 +228,12 @@ sig(int signo)
 				bgjobL* job = searchJobByID(chldPID);
 				switch (job->state)
 				{
-					case RUNNING:
+					case RUNNING:	// BACKGROUND JOB TERMINATED NORMALLY
 						transitProcState(job, TERMINATED);
 						printf("[%d]\tDone\t\t\t%s\n", job->num, job->cmd);
 						fflush(stdout);
 						break;
-					case STOPPED:  // not coming ?
+					case STOPPED:  // DO NOT COME TO THIS STATE
 						printf("never coming here?\n");
 						break;
 					default:
